@@ -1,7 +1,7 @@
 # thresholds.yaml
 status: DRAFT            # becomes FINAL only after Theorist numbers are in
-version: 0.5
-numeric_tiers_pending_theorist: true
+version: 0.6
+numeric_tiers_pending_theorist: false   # Theorist log 3eb046d (all VERIFIED)
 source_of_truth: Residual_Brain_Age_Proposal_LaTeX.pdf
 
 execution: {count_x1_status: FINAL}
@@ -71,6 +71,12 @@ mri:
     status: USER_SPECIFIED_ROUND_7
     before_cohort_counts: report_STATUS_x_OVERALLQC_and_regional_QC_counts
   freesurfer_version: {report_observed: true, expected_by_phase: null}
+  outlier_rule:                      # D-010
+    applies_to: unreviewed           # OVERALLQC blank with STATUS partial
+    measures: [hippocampus_total_over_icv, mean_temporal_thickness]
+    mad_cutoff: 5
+    reference: median_of_all_usable_mri
+    sensitivity_without_rule: true
 
 amyloid:
   source: UCBERKELEY_AMY_6MM
@@ -167,7 +173,7 @@ brain_age_training_pool:
   exclude_if_any_later_non_cn: true
   exclude_rids: all_rids_with_index_eligible_scan
   one_mri_per_rid: earliest_usable
-  min_n: PENDING_THEORIST
+  min_n: 300                         # JUDGMENT, not derived; Chat B to rule
   fallback: NONE                     # cross-fitting fallback removed; shortfall = STOP and escalate
 
 plasma_subset:
@@ -176,8 +182,8 @@ plasma_subset:
   ptau217_within_days: 365
 
 tiers:
-  aim1: {confirmatory_n: PENDING_THEORIST, raised_effect_n: PENDING_THEORIST, stop_below: PENDING_THEORIST}
-  aim2: {min_confirmed_events: PENDING_THEORIST}
+  aim1: {confirmatory_n: 462, raised_effect_n: 258, stop_below: 258}   # r=0.15 / 0.20, alpha 0.05/3, power 0.80
+  aim2: {min_confirmed_events: 69}   # Schoenfeld, HR 1.5/SD, VIF 1.43
   aim3_reserve: EXPLORATORY_unless_theorist_shows_powered
 
 identifiers:
@@ -228,3 +234,8 @@ identifiers:
   row_id:
     source: original_csv_row_position
     order: ascending
+
+brain_age_model:                     # X4 gate (build phase)
+  mae_max_years: 4.5
+  mae_max_ratio_to_null: 0.75        # null MAE computed in the held-out set
+  bias: {abs_slope_max: 0.05, abs_r_max: 0.10}
