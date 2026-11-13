@@ -86,4 +86,9 @@ Codex outputs diffs only.
 ## D-007 QC pass codes (from documentation, recorded before qc_values.py runs)
 - UCBERKELEY_AMY_6MM and UCBERKELEY_TAU_6MM qc_flag: 2 = Pass (DATADIC L72109, L72786)
 - AMYQC SCANQLTY: 1 = Yes (DATADIC L7041, L7065)
-- UCSFFSX7 OVERALLQC: token "[FILL IN]" per UCSF FreeSurfer Methods PDF, page [FILL IN]
+- UCSFFSX7 OVERALLQC: token "Pass" (strict; "Partial" excluded). Source: ADNIMERGE2
+  reference docs for UCSFFSX51 list OVERALLQC values Pass/Fail/Partial
+  (atri-biostats.github.io/ADNIMERGE2/reference/UCSFFSX51_ADNI1_3T.html). The UCSFFSX7
+  dictionary entry (DATADIC L77439) does not enumerate values, and the official UCSF
+  FreeSurfer Methods PDF has not been checked. qc_values.py must confirm "Pass" exists in
+  UCSFFSX7; if it does not, stop and revisit before any count.
