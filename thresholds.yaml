@@ -1,6 +1,6 @@
 # thresholds.yaml
 status: DRAFT            # becomes FINAL only after Theorist numbers are in
-version: 0.6
+version: 0.7
 numeric_tiers_pending_theorist: false   # Theorist log 3eb046d (all VERIFIED)
 source_of_truth: Residual_Brain_Age_Proposal_LaTeX.pdf
 
@@ -71,6 +71,7 @@ mri:
     status: USER_SPECIFIED_ROUND_7
     before_cohort_counts: report_STATUS_x_OVERALLQC_and_regional_QC_counts
   freesurfer_version: {report_observed: true, expected_by_phase: null}
+  x1_usability_fields: required_fields_only   # X1 counts use the 7 MTL fields only (D-011)
   outlier_rule:                      # D-010
     applies_to: unreviewed           # OVERALLQC blank with STATUS partial
     measures: [hippocampus_total_over_icv, mean_temporal_thickness]
@@ -82,7 +83,7 @@ amyloid:
   source: UCBERKELEY_AMY_6MM
   qc_source: AMYQC
   measure: centiloid_global
-  negative_rule: {operator: "<", cutoff: 20, status: PROVISIONAL}
+  negative_rule: {operator: "<", cutoff: 20, status: DECIDED}   # D-010; Red Team may add sensitivity cutoffs only
   columns:
     centiloid_global: CENTILOIDS
     qc:
@@ -110,7 +111,7 @@ tau:
 
 cognition:
   primary_source: UWNPSYCHSUM        # ADNI1-3 only
-  sensitivity_source: ADSP_PHC_COGN  # covers ADNI4; status PROPOSED, user decision open
+  sensitivity_source: ADSP_PHC_COGN  # DECIDED D-010: sensitivity only; covers ADNI4
   cdr_source: CDR
   outcomes: [ADNI_MEM, ADNI_EF, CDR_SB]
   baseline: nearest_visit_with_non_missing_outcome
@@ -128,7 +129,7 @@ diagnosis:
     diagnosis: DIAGNOSIS
     phase_for_raw_value_counts: PHASE
     no_diagnosis_values: [10]
-    other_code_mapping_status: PENDING_USER_CONFIRMATION_A5
+    other_code_mapping_status: PROVISIONAL_A5
     report: diagnosis_value_counts_per_phase
 
 conversion:
@@ -137,7 +138,7 @@ conversion:
   time_origin: index_date
   event: first_post_baseline_dementia
   confirmation: {rule: next_diagnosis_visit_only, unconfirmed_flag: true, report_both: true}
-  code_mapping: USER_CONFIRMED_A5
+  code_mapping: PROVISIONAL_A5      # Aim 2 X1 verdict provisional until A5 confirmed
 
 residual_model:                      # D-001 revised to match proposal sec 5.2
   outcome: corrected_BAG
@@ -156,7 +157,7 @@ reserve:
   source: PTDEMOG
 
 covariates_primary: [age, sex, icv, education, amyloid, tau]
-apoe4: {source: APOERES, in_primary_model: false, status: OPEN_DECISION}
+apoe4: {source: APOERES, in_primary_model: false, status: DECIDED_SENSITIVITY_ONLY}
 
 multiplicity: {method: FDR_BH, across: outcomes}    # proposal says FDR, not Holm
 
@@ -236,6 +237,9 @@ identifiers:
     order: ascending
 
 brain_age_model:                     # X4 gate (build phase)
+  features: DEFINED_AT_X3            # MRIs lost to missing features are re-counted and reported (D-011)
+  candidates_in_order: [ridge, gradient_boosting]   # first to pass X4 is used; selection on held-out age prediction only, never outcomes
+  on_x4_fail_all: STOP_AND_ESCALATE
   mae_max_years: 4.5
   mae_max_ratio_to_null: 0.75        # null MAE computed in the held-out set
   bias: {abs_slope_max: 0.05, abs_r_max: 0.10}
