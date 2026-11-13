@@ -90,3 +90,11 @@ Codex outputs diffs only.
   dictionary entry (DATADIC L77439) does not enumerate values, and the official UCSF
   FreeSurfer Methods PDF has not been checked. qc_values.py must confirm "Pass" exists in
   UCSFFSX7; if it does not, stop and revisit before any count.
+## D-009 Data-informed decisions after qc_values.py (13 Nov 2026)
+- qc_values.py output seen. STOP rule in D-007 triggered: OVERALLQC blank in 11,137 rows,
+  "Pass" in 674, plus an unplanned value "Hippocampus Only" (10 rows).
+- Dictionary: STATUS partial = no QC, not final; Complete = QC'd and finalized.
+- MRI QC rule chosen: [A/B/C]. DATA-INFORMED (counts seen). Strict Pass kept as sensitivity.
+- Sentinel bug fixed: -1/-2/-4 were wrongly treated as missing in continuous measures.
+- Occupation (PTWORK) blank in 4,888 rows: A3 fails; education is the only reserve proxy.
+- APOE joined by RID only (VISCODE/date blank in 2,057 APOERES rows).
