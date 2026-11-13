@@ -2,9 +2,12 @@
 
 ## D-000 Data provenance (honest record)
 - 11 tables downloaded from IDA Study Files, versions dated 12 Nov 2026
-  (plasma table dated 6 Nov 2026 on the site). Files saved 13 Nov 2026, 01:50-01:58 local.
-- Download PRECEDED the first thresholds commit. Chat B to rule whether this is acceptable.
-- Attestation: [FILL IN: "No CSV in data/raw has been opened, viewed or counted" OR describe what was opened]
+  (plasma table dated 6 Nov 2026 on the site). Files saved 13 Nov 2026, 01:50-01:58 local
+  (00:50-00:58 UTC).
+- Download PRECEDED the first thresholds commit (f580e72, 01:09 UTC). Chat B to rule.
+- Attestation: [FILL IN, choose the true one:
+  "I attest that no CSV in data/raw has been opened, viewed, filtered or counted."
+  OR describe exactly what was opened and when.] MD Ali Ashraf Yad, 13 Nov 2026.
 - The data zips were uploaded to the coordinator chat (Claude). It listed file names and
   sizes only and read no rows. The dictionary and header rows only were shared with Codex.
 - Files: UCSFFSX7, UCBERKELEY_AMY_6MM, UCBERKELEY_TAU_6MM, UPENN_PLASMA_FUJIREBIO_QUANTERIX,
@@ -16,7 +19,7 @@ amyloid window 365 -> 180 days; Holm -> FDR; Centiloid x tau and FS_version move
 primary residual model; comparators replaced by Ossenkoppele and Lyu measures; APOE4 dropped
 from primary; Aim 2 labelled secondary; occupation conditional on being recorded.
 
-## D-002 Fixes from Chat B's BLOCKED verdict
+## D-002 Fixes from Chat B's first BLOCKED verdict
 1. Pass rule changed to CI excludes null, powered at the smallest effect of interest.
 2. Training-pool cross-fitting fallback removed. Shortfall = STOP.
 3. Approvers: Biomni is not a code reviewer and its model family is unverified.
@@ -25,15 +28,18 @@ from primary; Aim 2 labelled secondary; occupation conditional on being recorded
 
 ## D-003 Open decisions (not resolved)
 - Timeline: 16 weeks (proposal) vs 12 Dec draft. User decides.
-- Cognition: UW only, PHC only, or UW primary + PHC sensitivity (coordinator recommends the last).
-- APOE4 in or out.
+- Cognition: UW only, PHC only, or UW primary + PHC sensitivity (coordinator recommends the
+  last; under it, ADNI-4 participants contribute only through CDR-SB).
+- APOE4 in or out (coordinator recommends: out of primary, sensitivity only).
 - Centiloid cutoff 20 and training-pool rule: Red Team to check.
 - Numeric tiers: pending Theorist; Theorist must redo power under FDR, not Holm.
-- OVERALLQC pass token: User picks from qc_values.py output, before any cohort count.
+- OVERALLQC pass token: chosen from documentation (D-007), not from observed counts.
 - A5 diagnosis coding: provisional until User reviews DIAGNOSIS counts per PHASE.
 - Brain-age feature list: not specified (Theorist / Chat B).
 - Column mappings for age, sex, education, APOE: needed before main analysis.
 - Real X4a overlap check: must run on the actual training set in the build phase.
+- All of the above that change n (cognition source, Centiloid cutoff, APOE4) must be fixed
+  before count_x1.py runs.
 
 ## D-004 Assumptions the script cannot test (User records, dated)
 A1 plasma advisory | A2 Centiloid both tracers | A3 occupation exists | A4 ADNI-Mem/EF coverage
@@ -58,11 +64,26 @@ A5 DXSUM coding consistent | A6 OASIS-3 applied | A7 OASIS-3 tau/plasma/FreeSurf
   "missing QC record = ineligible" would have dropped ADNI2 scans. Now: AMYQC applies only
   where a record exists; blank VISCODE2 kept as a key component; X4a labelled "by
   construction"; status FINAL refused while any PENDING_THEORIST value remains.
+- R6 (requested, pending): count_x1.py must refuse to run unless status is FINAL; DRAFT run
+  mode removed (Chat B item 4).
 
 ## D-006 Commit record
-- f580e72  thresholds.yaml v0.2 created (GitHub web)
-- 846d181  decisions.md rename; .gitignore added
-- d804625  docs/headers.txt (header rows only)
-- [FILL IN]  thresholds.yaml v0.3 (column mappings)
-- 410fd29  thresholds.yaml v0.4; count_x1.py and qc_values.py (not run)
-Verify with: git log --oneline
+72039dd  Initial commit (LICENSE)
+f580e72  thresholds.yaml v0.2 created (GitHub web)
+71611e3  decisions.md added (GitHub web)
+846d181  .gitignore added
+d804625  docs/headers.txt (header rows only)
+489cb33  thresholds.yaml v0.3 (column mappings)
+ad1f370  count_x1.py and qc_values.py (not run)
+410fd29  thresholds.yaml v0.4 (round 5)
+1841a64  decisions.md revised (GitHub web)
+Disclosure: 489cb33, ad1f370 and 410fd29 were created in the Codex environment under the
+User's git identity (+0000 timezone, double-space name). Contents were reviewed by the User
+and the coordinator before use. The Engineer committing thresholds.yaml departs from the
+"Engineer never edits thresholds" rule; Chat B to rule. From now on, only the User commits;
+Codex outputs diffs only.
+
+## D-007 QC pass codes (from documentation, recorded before qc_values.py runs)
+- UCBERKELEY_AMY_6MM and UCBERKELEY_TAU_6MM qc_flag: 2 = Pass (DATADIC L72109, L72786)
+- AMYQC SCANQLTY: 1 = Yes (DATADIC L7041, L7065)
+- UCSFFSX7 OVERALLQC: token "[FILL IN]" per UCSF FreeSurfer Methods PDF, page [FILL IN]
