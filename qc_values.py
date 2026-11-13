@@ -2,7 +2,7 @@
 
 Run from any directory with Python 3.10+ and PyYAML installed. Data inputs
 are restricted to data/raw; thresholds.yaml is read only as configuration.
-Only OVERALLQC distinct values and per-column sentinel counts are printed.
+Only aggregate QC and per-column audit/missing-value counts are printed.
 """
 
 import csv
@@ -52,6 +52,7 @@ def token(value):
 
 
 def sentinel(value):
+    """Audit labels only: negative-code occurrence does not imply missingness."""
     value = value.strip()
     if not value:
         return "BLANK"
@@ -64,12 +65,20 @@ def sentinel(value):
     return None
 
 
-def missing(value):
-    return sentinel(value) is not None
+def missing(value, column=None):
+    """Round 7: blanks everywhere; -4 additionally only in pT217_F."""
+    if not value.strip():
+        return True
+    if column == "pT217_F":
+        try:
+            return Decimal(value.strip()) == Decimal(-4)
+        except InvalidOperation:
+            pass
+    return False
 
 
 def number(value, table, column):
-    if missing(value):
+    if missing(value, column):
         return None
     try:
         result = Decimal(value.strip())
@@ -88,11 +97,15 @@ def load_config():
         raise InputError("Cannot read thresholds.yaml as valid UTF-8 YAML") from exc
     if not isinstance(config, dict):
         raise InputError("thresholds.yaml must be a mapping")
+    if config.get("missing_values") != {
+        "blank_is_missing": True, "additional_by_column": {"pT217_F": [-4]},
+    }:
+        raise InputError("Unsupported missing-value policy; expected Round 7 column-specific rules")
     return config
 
 
 def column_specs(config):
-    """Explicit v0.3 mappings plus the User-approved X1 audit columns."""
+    """Explicit v0.5 mappings plus the User-approved X1 audit columns."""
     specs = {name: set() for name in FILES}
     identifiers = config["identifiers"]
     for kind in ("participant", "visit", "date"):
@@ -109,6 +122,8 @@ def column_specs(config):
             specs[mri["source"]].update((mapping["left"], mapping["right"]))
     specs[mri["source"]].update((
         mri["qc_flag"]["column"], mri["columns"]["freesurfer_version"],
+        mri["columns"]["status"], mri["columns"]["hippocampal_qc"],
+        mri["columns"]["temporal_qc"],
         identifiers["phase"]["column"],
     ))
     amy = config["amyloid"]
@@ -195,26 +210,39 @@ def main():
     for name, columns in specs.items():
         table = read_table(name, columns)
         if name == config["mri"]["source"]:
-            qc = config["mri"]["qc_flag"]["column"]
-            reason = table.require([qc])
+            mri = config["mri"]
+            overall = mri["qc_flag"]["column"]
+            for qc in (overall, mri["columns"]["hippocampal_qc"], mri["columns"]["temporal_qc"]):
+                reason = table.require([qc])
+                if reason:
+                    output.append(f"{name}.{qc}: NOT EVALUATED ({reason})")
+                    failed = True
+                else:
+                    for value, count in sorted(Counter(r.values[qc] for r in table.rows).items()):
+                        output.append(f"{name}.{qc} value={quoted(value)} count={count}")
+                    if not table.rows:
+                        output.append(f"{name}.{qc}: distinct_values=0")
+            status = mri["columns"]["status"]
+            reason = table.require([status, overall])
             if reason:
-                output.append(f"{name}.{qc}: NOT EVALUATED ({reason})")
+                output.append(f"{name}.STATUS_x_OVERALLQC: NOT EVALUATED ({reason})")
                 failed = True
             else:
-                for value, count in sorted(Counter(r.values[qc] for r in table.rows).items()):
-                    output.append(f"{name}.{qc} value={quoted(value)} count={count}")
-                if not table.rows:
-                    output.append(f"{name}.{qc}: distinct_values=0")
+                output.append(f"{name}.STATUS_x_OVERALLQC:")
+                output.append("STATUS | OVERALLQC | count")
+                pairs = Counter((r.values[status], r.values[overall]) for r in table.rows)
+                for (status_value, qc_value), count in sorted(pairs.items()):
+                    output.append(f"{quoted(status_value)} | {quoted(qc_value)} | {count}")
         for column in sorted(columns):
             reason = table.require([column])
             if reason:
-                output.append(f"{name}.{column} sentinels: NOT EVALUATED ({reason})")
+                output.append(f"{name}.{column} audit_values: NOT EVALUATED ({reason})")
                 failed = True
                 continue
             counts = Counter(sentinel(r.values[column]) for r in table.rows)
-            output.append(f"{name}.{column} sentinels: " + " ".join(
+            output.append(f"{name}.{column} audit_values: " + " ".join(
                 f"{value}={counts[value]}" for value in SENTINELS
-            ))
+            ) + f" missing={sum(missing(r.values[column], column) for r in table.rows)}")
     print("\n".join(output))
     return int(failed)
 

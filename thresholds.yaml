@@ -1,8 +1,13 @@
 # thresholds.yaml
 status: DRAFT            # becomes FINAL only after Theorist numbers are in
-version: 0.4
+version: 0.5
 numeric_tiers_pending_theorist: true
 source_of_truth: Residual_Brain_Age_Proposal_LaTeX.pdf
+
+execution: {count_x1_status: FINAL}
+missing_values:
+  blank_is_missing: true
+  additional_by_column: {pT217_F: [-4]}
 
 units: {month_days: 365, censor_days: 1826}
 
@@ -54,11 +59,17 @@ mri:
       require_both_non_missing: true
       aggregation: mean
     freesurfer_version: FSVER
+    status: STATUS
+    hippocampal_qc: HIPPOQC
+    temporal_qc: TEMPQC
   qc_flag:
     column: OVERALLQC
-    pass_token: null
-    status: PENDING_USER_SELECTION
-    before_cohort_counts: report_distinct_values_and_counts_only
+    pass_token: "Pass"
+    accept_blank_when: {column: STATUS, equals: "partial"}
+    excluded_tokens: ["Fail", "Partial", "Hippocampus Only"]
+    strict_pass_only_sensitivity: true
+    status: USER_SPECIFIED_ROUND_7
+    before_cohort_counts: report_STATUS_x_OVERALLQC_and_regional_QC_counts
   freesurfer_version: {report_observed: true, expected_by_phase: null}
 
 amyloid:
@@ -170,6 +181,8 @@ tiers:
   aim3_reserve: EXPLORATORY_unless_theorist_shows_powered
 
 identifiers:
+  join_keys:
+    APOERES: [RID]  # APOE is not joined by visit or date
   participant:
     UCSFFSX7: RID
     UCBERKELEY_AMY_6MM: RID

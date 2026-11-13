@@ -1,6 +1,6 @@
 """X1 feasibility counts only; no models, participant rows, or result interpretation.
 
-Rules: thresholds v0.4 and the User's rounds 1-5, including the subsequent
+Rules: thresholds v0.5 and the User's rounds 1-7, including the subsequent
 provisional pooled DIAGNOSIS mapping and duplicate-visit resolution. Importing
 qc_values is for shared input utilities only; its main function is not called.
 """
@@ -248,7 +248,7 @@ class Engine:
             rows = valid
             if not rows:
                 continue
-            # Normalize the specified missing codes to one missing category.
+            # Only the column-specific missing values share a missing category.
             def category(row):
                 raw = row.values[column]
                 if missing(raw):
@@ -283,7 +283,7 @@ class Engine:
         self.visit_cache[cache_key] = result
         return result
 
-    def modalities(self):
+    def modalities(self, strict_pass_only=False):
         c = self.c
         mn, an, tn = (c[key]["source"] for key in ("mri", "amyloid", "tau"))
         mq = c["mri"]["qc_flag"]
@@ -294,7 +294,8 @@ class Engine:
             mapped = c["mri"]["columns"][field]
             mcols.extend([mapped] if isinstance(mapped, str) else [mapped["left"], mapped["right"]])
         checks = (
-            (mn, self.ids(mn) + mcols + [mq["column"]]),
+            (mn, self.ids(mn) + mcols + [mq["column"]] +
+             ([] if strict_pass_only else [mq["accept_blank_when"]["column"]])),
             (an, self.ids(an) + [c["amyloid"]["columns"]["centiloid_global"],
                                 c["amyloid"]["columns"]["qc"]["column"]] + aq["join_keys"]),
             (tn, self.ids(tn) + [c["tau"]["columns"]["meta_temporal_suvr"],
@@ -307,7 +308,12 @@ class Engine:
         mri = []
         for item in self.items(mn):
             values = [self.numeric(item.row.values[col], mn, col) for col in mcols]
-            passed = item.row.values[mq["column"]] == str(mq["pass_token"])
+            overall = item.row.values[mq["column"]]
+            strict_pass = overall == mq["pass_token"]
+            allowed_pending = (not strict_pass_only and missing(overall) and
+                               item.row.values[mq["accept_blank_when"]["column"]] ==
+                               mq["accept_blank_when"]["equals"])
+            passed = strict_pass or allowed_pending
             if not passed:
                 self.diagnostics["MRI.rejected_QC_rows"] += 1
             if any(missing(item.row.values[col]) for col in mcols):
@@ -565,9 +571,8 @@ class Engine:
 
 
 class Report:
-    def __init__(self, status):
-        self.lines = ["DRAFT, NOT EVIDENCE" if status == "DRAFT" else "X1 FEASIBILITY COUNTS"]
-        self.status = status
+    def __init__(self):
+        self.lines = ["X1 FEASIBILITY COUNTS"]
 
     def add(self, label, value=None, reason=""):
         if value is None:
@@ -586,21 +591,23 @@ class Report:
         elif observed is None or blocked:
             self.add(label, reason="required count unavailable or X4a BLOCKED")
         else:
-            prefix = "DRAFT " if self.status == "DRAFT" else ""
             verdict = "PASS" if observed >= threshold else "FAIL"
-            self.add(label, f"{prefix}{verdict}; n={observed}; required_n>={threshold}")
+            self.add(label, f"{verdict}; n={observed}; required_n>={threshold}")
 
 
 def validate(config):
-    if config.get("status") not in ("DRAFT", "FINAL"):
-        raise InputError("thresholds.yaml status must be DRAFT or FINAL")
-    if config["status"] == "FINAL" and has_pending_theorist(config):
+    if config.get("status") != "FINAL":
+        raise InputError("count_x1.py runs only with status FINAL; DRAFT execution is disabled")
+    if has_pending_theorist(config):
         raise InputError("status FINAL is forbidden while any PENDING_THEORIST value remains")
-    if config["mri"]["qc_flag"]["pass_token"] is None:
-        raise InputError("OVERALLQC pass_token is null; the User must select and commit it before X1")
-    if not isinstance(config["mri"]["qc_flag"]["pass_token"], str):
-        raise InputError("OVERALLQC pass_token must be a quoted string matching an audited CSV token exactly")
     expected = (
+        (config["execution"]["count_x1_status"], "FINAL"),
+        (config["mri"]["qc_flag"]["pass_token"], "Pass"),
+        (config["mri"]["columns"]["status"], "STATUS"),
+        (config["mri"]["qc_flag"]["accept_blank_when"], {"column": "STATUS", "equals": "partial"}),
+        (config["mri"]["qc_flag"]["excluded_tokens"], ["Fail", "Partial", "Hippocampus Only"]),
+        (config["mri"]["qc_flag"]["strict_pass_only_sensitivity"], True),
+        (config["identifiers"]["join_keys"]["APOERES"], ["RID"]),
         (config["index"]["rule"], "earliest_tau_scan_meeting_all"),
         (config["index"]["outcome_data_used"], False),
         (config["selection"]["tie_break"], ["complete_values", "earlier_record", "lowest_row_id"]),
@@ -669,6 +676,12 @@ def raw_report(engine, report):
         for phase, counts in versions.items()
     }, problem)
     report.add("MRI.expected_version_mismatch", reason="expected_by_phase is unspecified")
+    qc = c["mri"]["qc_flag"]["column"]
+    problem = tables[mn].require([qc])
+    if not problem and tables[mn].issues:
+        problem = "malformed records prevent complete strict-Pass QC counts"
+    report.add("MRI.strict_Pass_QC_rows", None if problem else
+               sum(row.values[qc] == c["mri"]["qc_flag"]["pass_token"] for row in tables[mn].rows), problem)
 
 
 def auxiliary_report(engine, report):
@@ -747,18 +760,54 @@ def selected_versions(engine, report, label, rids, indices):
     }, problem)
 
 
+def strict_pass_sensitivity(config, tables, report):
+    """Re-select the index and re-evaluate the cohort under strict MRI Pass only.
+
+    This sensitivity supplies counts only; primary tiers and training-pool
+    exclusions continue to use the primary MRI rule.
+    """
+    engine = Engine(config, tables)
+    data, problem = engine.modalities(strict_pass_only=True)
+    indices = None if data is None else engine.indices(*data)
+    prefix = "strict_Pass_only."
+    report.add(prefix + "usable_MRI_rows", None if data is None else
+               sum(len(rows) for rows in data[0].values()), problem)
+    report.add(prefix + "index_eligible_RIDs", None if indices is None else len(indices), problem)
+    dn = config["diagnosis"]["source"]
+    dc = config["diagnosis"]["columns"]["diagnosis"]
+    problem = problem or engine.need(dn, engine.ids(dn) + [dc])
+    cohort = baselines = per_outcome = None
+    outcome_problems = {}
+    if not problem:
+        dx = engine.visits(dn, dc, diagnosis=True)
+        cohort, baselines, per_outcome, outcome_problems = engine.cohort(indices, dx)
+        problem = "; ".join(outcome_problems.values())
+    report.add(prefix + "analysis_cohort.RIDs", None if cohort is None else len(cohort), problem)
+    for diagnosis in ("CN", "MCI"):
+        report.add(prefix + "analysis_cohort." + diagnosis, None if cohort is None else
+                   sum(baselines[rid].value == diagnosis for rid in cohort), problem)
+    for outcome in OUTCOMES:
+        rids = None if per_outcome is None else per_outcome[outcome]
+        report.add(prefix + outcome + ".n", None if rids is None else len(rids),
+                   outcome_problems.get(outcome, problem))
+    report.lines.append("strict_Pass_only.edge_case_decisions:")
+    report.lines.append("case | rule_applied | count | unit")
+    for (case, rule, unit), count in sorted(engine.edges.items()):
+        report.lines.append(f"{case} | {rule} | {count} | {unit}")
+
+
 def main():
     now = datetime.now(timezone.utc)
     commit, threshold_time = preflight(now)
     config = load_config()
-    validate(config)  # In particular, refuse a null pass token before raw-data I/O.
+    validate(config)  # FINAL and complete thresholds required before raw-data I/O.
     protected = {name: sha(ROOT / name) for name in (
         "thresholds.yaml", "decisions.md", "count_x1.py", "qc_values.py",
     )}
     specs = column_specs(config)
     tables = {name: read_table(name, columns, exclude_bad_records=True) for name, columns in specs.items()}
     engine = Engine(config, tables)
-    report = Report(config["status"])
+    report = Report()
     report.add("git_HEAD", commit)
     for name, digest in protected.items():
         report.add("SHA256." + name, digest)
@@ -800,6 +849,7 @@ def main():
     aim1 = min(outcome_counts) if len(outcome_counts) == len(OUTCOMES) else None
     report.add("Aim1.smallest_per_outcome_n", aim1, cohort_problem)
     selected_versions(engine, report, "analysis_cohort.by_selected_MRI_PHASE_and_FSVER", cohort, indices)
+    strict_pass_sensitivity(config, tables, report)
     confirmed = unconfirmed = conflict_next = None
     event_problem = cohort_problem
     if cohort is not None:
@@ -904,7 +954,7 @@ def main():
         report.add(f"X4a.{label}.RID_count", None if rids is None else len(rids))
         report.add(f"X4a.{label}.sorted_RID_SHA256", None if rids is None else rid_hash(rids))
     report.add("X4a.overlap_RIDs", None if overlap is None else len(overlap))
-    assertion = "BLOCKED" if blocked else "DRAFT PASS" if config["status"] == "DRAFT" else "PASS"
+    assertion = "BLOCKED" if blocked else "PASS"
     report.add("X4a.assertion (by construction)", None if overlap is None else assertion)
     for name, threshold in config["tiers"]["aim1"].items():
         report.threshold("threshold.Aim1." + name, aim1, threshold, blocked)
