@@ -62,8 +62,9 @@ A5 DXSUM coding consistent | A6 OASIS-3 applied | A7 OASIS-3 tau/plasma/FreeSurf
   "missing QC record = ineligible" would have dropped ADNI2 scans. Now: AMYQC applies only
   where a record exists; blank VISCODE2 kept as a key component; X4a labelled "by
   construction"; status FINAL refused while any PENDING_THEORIST value remains.
-- R6 (requested, pending): count_x1.py must refuse to run unless status is FINAL; DRAFT run
-  mode removed (Chat B item 4).
+- R6 (DONE in 1e8692b): count_x1.py refuses to run unless status is FINAL; DRAFT run mode removed.
+- R7 (DONE in 1e8692b): missing values = blank only (plus pT217_F -4); MRI QC rule A; STATUS mapped.
+- R8 (DONE in 18dbb66): MRI outlier rule (D-010) with sensitivity counts.
 
 ## D-006 Commit record
 72039dd  Initial commit (LICENSE)
@@ -71,15 +72,21 @@ f580e72  thresholds.yaml v0.2 created (GitHub web)
 71611e3  decisions.md added (GitHub web)
 846d181  .gitignore added
 d804625  docs/headers.txt (header rows only)
-489cb33  thresholds.yaml v0.3 (column mappings)
-ad1f370  count_x1.py and qc_values.py (not run)
-410fd29  thresholds.yaml v0.4 (round 5)
+489cb33  thresholds.yaml v0.3 (column mappings)            [Codex environment]
+ad1f370  count_x1.py and qc_values.py (not run)            [Codex environment]
+410fd29  thresholds.yaml v0.4 (round 5)                     [Codex environment]
 1841a64  decisions.md revised (GitHub web)
-Disclosure: 489cb33, ad1f370 and 410fd29 were created in the Codex environment under the
-User's git identity (+0000 timezone, double-space name). Contents were reviewed by the User
-and the coordinator before use. The Engineer committing thresholds.yaml departs from the
-"Engineer never edits thresholds" rule; Chat B to rule. From now on, only the User commits;
-Codex outputs diffs only.
+1e8692b  thresholds.yaml v0.5, Round 7 code               [Codex environment]
+e7115f0  merge                                              [Codex environment]
+0c2a25b, c9f9680  decisions.md updates (GitHub web)
+3eb046d  theorist/theorist_log.jsonl (Aim 1-3, MAE; all VERIFIED)
+713e636  merge
+5e29208  thresholds.yaml v0.6: Theorist tiers, outlier rule, X4 criteria (GitHub web)
+18dbb66  count_x1.py Round 8 outlier rule                  [Codex environment]
+[next]   thresholds.yaml v0.7 and this decisions.md
+[next]   status: FINAL (freeze commit; only change)
+"Codex environment" = created under the User's git identity from Codex (+0000 timezone,
+double-space name). See D-008.
 
 ## D-007 QC pass codes (from documentation, recorded before qc_values.py runs)
 - UCBERKELEY_AMY_6MM and UCBERKELEY_TAU_6MM qc_flag: 2 = Pass (DATADIC L72109, L72786)
@@ -90,14 +97,18 @@ Codex outputs diffs only.
   dictionary entry (DATADIC L77439) does not enumerate values, and the official UCSF
   FreeSurfer Methods PDF has not been checked. qc_values.py must confirm "Pass" exists in
   UCSFFSX7; if it does not, stop and revisit before any count.
+
 ## D-008 Deviations (for manuscript supplement)
-   - Data downloaded before first thresholds commit. Accepted by Chat B, conditional on the
-     true attestation (D-000) and disclosure in the manuscript.
-   - Engineer committed thresholds.yaml (489cb33, 410fd29) under the User's git identity.
-     Accepted by Chat B as a disclosed deviation.
-   - Repeat after the rule was set: Codex committed and pushed Round 7 (1e8692b, e7115f0,
-     thresholds v0.5) under the User's identity. Content reviewed by the coordinator.
-     Chat B to rule.  
+- Data downloaded before first thresholds commit. Accepted by Chat B, conditional on the true
+  attestation (D-000) and disclosure in the manuscript.
+- Engineer committed thresholds.yaml (489cb33, 410fd29) under the User's git identity.
+  Accepted by Chat B as a disclosed deviation.
+- Repeats after the "only the User commits" rule: Codex committed and pushed Round 7
+  (1e8692b, e7115f0) and Round 8 (18dbb66) under the User's identity. Contents reviewed by the
+  coordinator; Round 8 code verified by Chat B. Chat B ruling: accepted only with Codex's
+  GitHub access removed. Access removed on: [FILL IN date/time and how].
+- Codex committing under the User's git identity is disclosed in the manuscript supplement.
+
 ## D-009 Data-informed decisions after qc_values.py (13 Nov 2026)
 - qc_values.py output seen. STOP rule in D-007 triggered: OVERALLQC blank in 11,137 rows,
   "Pass" in 674, plus an unplanned value "Hippocampus Only" (10 rows).
@@ -105,17 +116,34 @@ Codex outputs diffs only.
 - MRI QC rule chosen: A. Accept OVERALLQC "Pass" OR blank with STATUS partial (not yet
   QC'd). Exclude Fail, Partial, "Hippocampus Only". DATA-INFORMED (counts seen).
   Strict Pass-only kept as a sensitivity analysis. Limitation for the manuscript: most
-## D-010 Pre-count decisions (13 Nov 2026, before count_x1.py)
-- Cognition: UW primary, PHC sensitivity; ADNI-4 contributes via CDR-SB only.
-- Centiloid cutoff: < 20 primary (Red Team to check).
-- APOE4: out of primary model; sensitivity only.
-- Partial OVERALLQC rows: excluded; regional QC not used (brain age uses whole-brain features).
-- Unreviewed MRIs: exclude if hippocampal volume/ICV or mean temporal thickness
-  > 5 MAD from the all-MRI median; counts reported; sensitivity without the rule.
-- Dictionary sources: STATUS L77437; pT217_F -4 L78290; qc_flag -1/-2 L72109, L72786.  
   segmentations are unreviewed.
 - Sentinel bug fixed: -1/-2/-4 were wrongly treated as missing in continuous measures
   (Centiloid, tau SUVR, ADNI-Mem/EF, CDR-SB, FreeSurfer). Only pT217_F -4 is a missing code.
 - PET qc_flag -1 (not assessed) and -2 (cannot be processed) are real codes; both fail.
 - Occupation (PTWORK) blank in 4,888 rows: A3 fails; education is the only reserve proxy.
 - APOE joined by RID only (VISCODE/date blank in 2,057 APOERES rows).
+
+## D-010 Pre-count decisions (13 Nov 2026, before count_x1.py)
+- Cognition: UW primary, PHC sensitivity; ADNI-4 contributes via CDR-SB only.
+- Centiloid cutoff: < 20 primary, DECIDED. Red Team may propose sensitivity cutoffs only;
+  it cannot change the primary.
+- APOE4: out of primary model; sensitivity only.
+- Partial OVERALLQC rows: excluded; regional QC not used (brain age uses whole-brain features).
+- Unreviewed MRIs: exclude if hippocampal volume/ICV or mean temporal thickness
+  > 5 MAD from the all-MRI median; counts reported; sensitivity without the rule.
+- Dictionary sources: STATUS L77437; pT217_F -4 L78290; qc_flag -1/-2 L72109, L72786.
+
+## D-011 Fixes from Chat B before FINAL (13 Nov 2026)
+- Theorist tiers verified by Chat B in a different model family: Aim 1 n >= 462 (r = 0.15),
+  >= 258 (r = 0.20), stop below 258; Aim 2 >= 69 confirmed events.
+- Training pool min_n = 300: a labelled JUDGMENT, not derived (accepted by Chat B).
+- Aim 3 (reserve): EXPLORATORY. Equal variance does not show interaction effects are powered.
+- Brain-age features: X1 counts use the 7 MTL fields only. The feature list is fixed at X3.
+  MRIs lost to missing brain-age features are re-counted and reported at X4, not hidden.
+- A5 stays PROVISIONAL. The Aim 2 X1 verdict is provisional until the User reviews the
+  DIAGNOSIS-by-PHASE counts printed by count_x1.py and confirms A5 in writing.
+- X4 failure rule (decided before any model is fit): candidates in order ridge, then gradient
+  boosting; the first to pass X4 is used; selection uses held-out age prediction in CN
+  amyloid-negative data only, never outcomes. If neither passes: STOP and escalate. Note:
+  with age SD 6-7 y, the 0.75 x null rule means MAE <= 3.6-4.2 y.
+- Labels in thresholds.yaml v0.7 updated to match D-010 (cutoff, cognition, APOE4 DECIDED).
