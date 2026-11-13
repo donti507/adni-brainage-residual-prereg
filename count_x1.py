@@ -1,6 +1,6 @@
 """X1 feasibility counts only; no models, participant rows, or result interpretation.
 
-Rules: thresholds v0.5 and the User's rounds 1-7, including the subsequent
+Rules: thresholds v0.6 and the User's rounds 1-8, including the subsequent
 provisional pooled DIAGNOSIS mapping and duplicate-visit resolution. Importing
 qc_values is for shared input utilities only; its main function is not called.
 """
@@ -16,7 +16,8 @@ import subprocess
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, DecimalException
+from statistics import median
 
 from qc_values import (
     ROOT, FILES, InputError, column_specs, load_config, missing, number,
@@ -283,7 +284,78 @@ class Engine:
         self.visit_cache[cache_key] = result
         return result
 
-    def modalities(self, strict_pass_only=False):
+    def exclude_mri_outliers(self, mri):
+        """One pooled reference over pre-filter usable MRI records, all visits.
+
+        MAD = median(abs(value - median(value))), without a scaling factor.
+        The strict inequality also defines the zero-MAD case without division.
+        Reviewed Pass records are never removed by this outlier rule.
+        """
+        rule = self.c["mri"]["outlier_rule"]
+        qc = self.c["mri"]["qc_flag"]
+        cutoff = Decimal(str(rule["mad_cutoff"]))
+        thickness_fields = (
+            "thickness_entorhinal", "thickness_fusiform",
+            "thickness_inferior_temporal", "thickness_middle_temporal",
+        )
+        reference = {}
+        for item in mri:
+            values = item.value
+            try:
+                measures = {
+                    "hippocampus_total_over_icv":
+                        (values["hippocampus_left"] + values["hippocampus_right"]) / values["icv"],
+                    "mean_temporal_thickness": sum(values[field] for field in thickness_fields) / 4,
+                }
+            except DecimalException:
+                measures = None
+            if measures is None or not all(value.is_finite() for value in measures.values()):
+                self.edge("MRI.undefined_outlier_measure",
+                          "exclude from reference; exclude unreviewed MRI; retain reviewed Pass MRI", "records")
+                continue
+            reference[item.row.position] = measures
+        self.diagnostics["MRI.outlier.pre_filter_usable_rows"] = len(mri)
+        self.diagnostics["MRI.outlier.reference_rows"] = len(reference)
+        self.diagnostics["MRI.outlier.reference_uncomputable_rows"] = len(mri) - len(reference)
+        stats = {}
+        for measure in rule["measures"]:
+            if reference:
+                values = [row[measure] for row in reference.values()]
+                center = median(values)
+                stats[measure] = (center, median(abs(value - center) for value in values))
+            self.diagnostics["MRI.outlier.excluded_" + measure] = 0
+        for label in ("tested_unreviewed_rows", "excluded_unreviewed_rows", "excluded_MAD_unreviewed_rows",
+                      "excluded_both_measures", "excluded_uncomputable_unreviewed_rows"):
+            self.diagnostics["MRI.outlier." + label] = 0
+        retained = []
+        for item in mri:
+            unreviewed = (missing(item.row.values[qc["column"]]) and
+                          item.row.values[qc["accept_blank_when"]["column"]] ==
+                          qc["accept_blank_when"]["equals"])
+            if not unreviewed:
+                retained.append(item)
+                continue
+            measures = reference.get(item.row.position)
+            if measures is None:
+                self.diagnostics["MRI.outlier.excluded_unreviewed_rows"] += 1
+                self.diagnostics["MRI.outlier.excluded_uncomputable_unreviewed_rows"] += 1
+                continue
+            self.diagnostics["MRI.outlier.tested_unreviewed_rows"] += 1
+            flagged = [measure for measure, (center, mad) in stats.items()
+                       if abs(measures[measure] - center) > cutoff * mad]
+            if flagged:
+                self.diagnostics["MRI.outlier.excluded_unreviewed_rows"] += 1
+                self.diagnostics["MRI.outlier.excluded_MAD_unreviewed_rows"] += 1
+                self.diagnostics["MRI.outlier.excluded_both_measures"] += int(len(flagged) == 2)
+                for measure in flagged:
+                    self.diagnostics["MRI.outlier.excluded_" + measure] += 1
+                self.edge("MRI.unreviewed_MAD_outlier", "exclude affected unreviewed MRI", "records")
+            else:
+                retained.append(item)
+        self.diagnostics["MRI.outlier.retained_usable_rows"] = len(retained)
+        return retained
+
+    def modalities(self, strict_pass_only=False, apply_outlier_rule=True):
         c = self.c
         mn, an, tn = (c[key]["source"] for key in ("mri", "amyloid", "tau"))
         mq = c["mri"]["qc_flag"]
@@ -329,6 +401,8 @@ class Engine:
                                            (by_column[mapped["left"]] + by_column[mapped["right"]]) / 2)
                 item.value = measurements
                 mri.append(item)
+        if apply_outlier_rule and not strict_pass_only:
+            mri = self.exclude_mri_outliers(mri)
         qc_groups = defaultdict(list)
         for row in self.tables[qn].rows:
             key = tuple(row.values[col].strip() for col in aq["join_keys"])
@@ -607,6 +681,11 @@ def validate(config):
         (config["mri"]["qc_flag"]["accept_blank_when"], {"column": "STATUS", "equals": "partial"}),
         (config["mri"]["qc_flag"]["excluded_tokens"], ["Fail", "Partial", "Hippocampus Only"]),
         (config["mri"]["qc_flag"]["strict_pass_only_sensitivity"], True),
+        (config["mri"]["outlier_rule"]["applies_to"], "unreviewed"),
+        (config["mri"]["outlier_rule"]["measures"],
+         ["hippocampus_total_over_icv", "mean_temporal_thickness"]),
+        (config["mri"]["outlier_rule"]["reference"], "median_of_all_usable_mri"),
+        (config["mri"]["outlier_rule"]["sensitivity_without_rule"], True),
         (config["identifiers"]["join_keys"]["APOERES"], ["RID"]),
         (config["index"]["rule"], "earliest_tau_scan_meeting_all"),
         (config["index"]["outcome_data_used"], False),
@@ -628,6 +707,9 @@ def validate(config):
     )
     if any(actual != required for actual, required in expected):
         raise InputError("Unsupported change to X1 rules; implementation requires review")
+    cutoff = Decimal(str(config["mri"]["outlier_rule"]["mad_cutoff"]))
+    if not cutoff.is_finite() or cutoff < 0:
+        raise InputError("mri.outlier_rule.mad_cutoff must be finite and non-negative")
     for field in config["mri"]["required_fields"]:
         mapping = config["mri"]["columns"][field]
         if isinstance(mapping, dict) and (
@@ -760,16 +842,17 @@ def selected_versions(engine, report, label, rids, indices):
     }, problem)
 
 
-def strict_pass_sensitivity(config, tables, report):
-    """Re-select the index and re-evaluate the cohort under strict MRI Pass only.
+def cohort_sensitivity(config, tables, report, *, strict_pass_only=False, apply_outlier_rule=True):
+    """Re-select the index and cohort under the specified MRI sensitivity.
 
     This sensitivity supplies counts only; primary tiers and training-pool
     exclusions continue to use the primary MRI rule.
     """
     engine = Engine(config, tables)
-    data, problem = engine.modalities(strict_pass_only=True)
+    data, problem = engine.modalities(strict_pass_only=strict_pass_only,
+                                     apply_outlier_rule=apply_outlier_rule)
     indices = None if data is None else engine.indices(*data)
-    prefix = "strict_Pass_only."
+    prefix = "strict_Pass_only." if strict_pass_only else "without_MRI_outlier_rule."
     report.add(prefix + "usable_MRI_rows", None if data is None else
                sum(len(rows) for rows in data[0].values()), problem)
     report.add(prefix + "index_eligible_RIDs", None if indices is None else len(indices), problem)
@@ -790,7 +873,7 @@ def strict_pass_sensitivity(config, tables, report):
         rids = None if per_outcome is None else per_outcome[outcome]
         report.add(prefix + outcome + ".n", None if rids is None else len(rids),
                    outcome_problems.get(outcome, problem))
-    report.lines.append("strict_Pass_only.edge_case_decisions:")
+    report.lines.append(prefix + "edge_case_decisions:")
     report.lines.append("case | rule_applied | count | unit")
     for (case, rule, unit), count in sorted(engine.edges.items()):
         report.lines.append(f"{case} | {rule} | {count} | {unit}")
@@ -849,7 +932,8 @@ def main():
     aim1 = min(outcome_counts) if len(outcome_counts) == len(OUTCOMES) else None
     report.add("Aim1.smallest_per_outcome_n", aim1, cohort_problem)
     selected_versions(engine, report, "analysis_cohort.by_selected_MRI_PHASE_and_FSVER", cohort, indices)
-    strict_pass_sensitivity(config, tables, report)
+    cohort_sensitivity(config, tables, report, strict_pass_only=True)
+    cohort_sensitivity(config, tables, report, apply_outlier_rule=False)
     confirmed = unconfirmed = conflict_next = None
     event_problem = cohort_problem
     if cohort is not None:
@@ -931,6 +1015,12 @@ def main():
         "tau.skipped.no_qualifying_MRI_in_window", "tau.skipped.no_qualifying_amyloid_in_window",
         "tau.skipped.MRI_amyloid_interval_exceeds_window",
         "MRI.rejected_QC_rows", "MRI.rejected_missing_required_measurement_rows", "MRI.rejected_invalid_numeric_rows",
+        "MRI.outlier.pre_filter_usable_rows", "MRI.outlier.reference_rows",
+        "MRI.outlier.reference_uncomputable_rows", "MRI.outlier.tested_unreviewed_rows",
+        "MRI.outlier.excluded_hippocampus_total_over_icv", "MRI.outlier.excluded_mean_temporal_thickness",
+        "MRI.outlier.excluded_both_measures", "MRI.outlier.excluded_MAD_unreviewed_rows",
+        "MRI.outlier.excluded_uncomputable_unreviewed_rows", "MRI.outlier.excluded_unreviewed_rows",
+        "MRI.outlier.retained_usable_rows",
         "AMYQC.amyloid_scans_missing_QC_record", "AMYQC.amyloid_scans_duplicate_QC_records",
         "AMYQC.amyloid_scans_one_pass", "AMYQC.amyloid_scans_one_fail", "AMYQC.amyloid_scans_invalid_join_key",
         "AMYQC.amyloid_scans_conflicting_QC_records", "amyloid.rejected_own_QC_rows",
@@ -976,7 +1066,7 @@ def main():
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (InputError, KeyError, TypeError, ValueError, OSError) as exc:
+    except (InputError, KeyError, TypeError, ValueError, OSError, DecimalException) as exc:
         message = str(exc) if isinstance(exc, InputError) else "Invalid configuration or unavailable local prerequisite"
         print("ERROR: " + message, file=sys.stderr)
         raise SystemExit(1)
