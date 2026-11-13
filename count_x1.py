@@ -1,6 +1,6 @@
 """X1 feasibility counts only; no models, participant rows, or result interpretation.
 
-Rules: thresholds v0.3 and the User's rounds 1-3, including the subsequent
+Rules: thresholds v0.4 and the User's rounds 1-5, including the subsequent
 provisional pooled DIAGNOSIS mapping and duplicate-visit resolution. Importing
 qc_values is for shared input utilities only; its main function is not called.
 """
@@ -27,6 +27,20 @@ from qc_values import (
 OUTCOMES = {"ADNI_MEM": "ADNI_MEM", "ADNI_EF": "ADNI_EF", "CDR_SB": "CDRSB"}
 # Explicitly authorized by the User; A5 remains provisional pending review.
 DX_CODES = {"1": "CN", "2": "MCI", "3": "Dementia"}
+
+
+def usable_key(key, columns):
+    """Blank VISCODE2 is a literal key component, not an excluded visit."""
+    return all(not missing(value) or (column == "VISCODE2" and not value.strip())
+               for column, value in zip(columns, key))
+
+
+def has_pending_theorist(value):
+    if isinstance(value, dict):
+        return any(has_pending_theorist(item) for item in value.values())
+    if isinstance(value, list):
+        return any(has_pending_theorist(item) for item in value)
+    return value == "PENDING_THEORIST"
 
 
 def git(*args):
@@ -215,7 +229,7 @@ class Engine:
         completeness = set()
         collapsed = 0
         for key, rows in groups.items():
-            if any(missing(part) for part in key):
+            if not usable_key(key, self.ids(name)):
                 self.diagnostics[f"{name}.{column}.missing_visit_key_rows"] += len(rows)
                 self.edge(f"{name}.{column}.missing_visit_key", "exclude affected visit", "visit_keys")
                 continue
@@ -312,26 +326,41 @@ class Engine:
         qc_groups = defaultdict(list)
         for row in self.tables[qn].rows:
             key = tuple(row.values[col].strip() for col in aq["join_keys"])
-            if all(not missing(part) for part in key):
+            if usable_key(key, aq["join_keys"]):
                 qc_groups[key].append(row)
         amyloid = []
         for row in self.tables[an].rows:
             key = tuple(row.values[col].strip() for col in aq["join_keys"])
-            matches = qc_groups.get(key, []) if all(not missing(part) for part in key) else []
+            if not usable_key(key, aq["join_keys"]):
+                self.diagnostics["AMYQC.amyloid_scans_invalid_join_key"] += 1
+                self.edge("amyloid.invalid_AMYQC_join_key", "exclude affected scan", "scans")
+                continue
+            matches = qc_groups.get(key, [])
+            # Five mutually exclusive scan categories: conflicting multiple
+            # records are counted separately from nonconflicting duplicates.
             if not matches:
                 self.diagnostics["AMYQC.amyloid_scans_missing_QC_record"] += 1
-            if len(matches) > 1:
-                self.diagnostics["AMYQC.amyloid_scans_duplicate_QC_records"] += 1
+            elif len(matches) == 1:
+                passed = token(matches[0].values[aq["column"]]) == token(str(aq["pass_value"]))
+                label = "one_pass" if passed else "one_fail"
+                self.diagnostics["AMYQC.amyloid_scans_" + label] += 1
+            else:
                 if len({token(r.values[aq["column"]]) for r in matches}) > 1:
                     self.diagnostics["AMYQC.amyloid_scans_conflicting_QC_records"] += 1
+                else:
+                    self.diagnostics["AMYQC.amyloid_scans_duplicate_QC_records"] += 1
         for item in self.items(an):
             row = item.row
             key = tuple(row.values[col].strip() for col in aq["join_keys"])
-            matches = qc_groups.get(key, []) if all(not missing(part) for part in key) else []
+            key_valid = usable_key(key, aq["join_keys"])
+            matches = qc_groups.get(key, []) if key_valid else []
             qc = c["amyloid"]["columns"]["qc"]
             own_pass = token(row.values[qc["column"]]) == token(str(qc["pass_value"]))
-            extra_pass = (len(matches) == 1 and
-                          token(matches[0].values[aq["column"]]) == token(str(aq["pass_value"])))
+            extra_pass = key_valid and (
+                (not matches and aq["missing_record"] == "not_required") or
+                (len(matches) == 1 and
+                 token(matches[0].values[aq["column"]]) == token(str(aq["pass_value"])))
+            )
             value = self.numeric(row.values[c["amyloid"]["columns"]["centiloid_global"]],
                                  an, c["amyloid"]["columns"]["centiloid_global"])
             if not own_pass:
@@ -441,7 +470,7 @@ class Engine:
             name = self.c["diagnosis"]["source"]
             later = [(v.day, v.row.position, v.value) for v in visits if v.day > event.day]
             for key in self.duplicate_conflicts[name]:
-                if key[0] != rid or any(missing(part) for part in key):
+                if key[0] != rid or not usable_key(key, self.ids(name)):
                     continue
                 day = self.day(key[2], name, self.ids(name)[2], "visit_keys")
                 if day is None:
@@ -478,7 +507,7 @@ class Engine:
                 later_non_cn[item.rid].append(item.day)
         conflicting_non_cn = defaultdict(list)
         for key in self.duplicate_conflicts[dn]:
-            if any(missing(part) for part in key):
+            if not usable_key(key, self.ids(dn)):
                 continue
             day = self.day(key[2], dn, self.ids(dn)[2], "visit_keys")
             if day is not None and any(
@@ -565,6 +594,8 @@ class Report:
 def validate(config):
     if config.get("status") not in ("DRAFT", "FINAL"):
         raise InputError("thresholds.yaml status must be DRAFT or FINAL")
+    if config["status"] == "FINAL" and has_pending_theorist(config):
+        raise InputError("status FINAL is forbidden while any PENDING_THEORIST value remains")
     if config["mri"]["qc_flag"]["pass_token"] is None:
         raise InputError("OVERALLQC pass_token is null; the User must select and commit it before X1")
     if not isinstance(config["mri"]["qc_flag"]["pass_token"], str):
@@ -606,6 +637,12 @@ def raw_report(engine, report):
         report.add(f"table.{name}.rows", None if table.problem else table.raw_count, table.problem)
         report.add(f"table.{name}.excluded_malformed_records",
                    None if table.problem else (table.issues or {}).get("malformed_record_width", 0), table.problem)
+        blank_problem = table.require(["VISCODE2"])
+        if not blank_problem and table.issues:
+            blank_problem = "malformed records prevent complete blank VISCODE2 counts"
+        report.add(f"table.{name}.rows_with_blank_VISCODE2",
+                   None if blank_problem else sum(not row.values["VISCODE2"].strip() for row in table.rows),
+                   blank_problem)
         problem = table.require(["PHASE"])
         if not problem and table.issues:
             problem = "malformed records prevent complete raw phase counts"
@@ -678,7 +715,7 @@ def duplicate_report(engine, report):
                    engine.need(name, engine.ids(name)))
         report.add(f"table.{name}.rows_with_missing_duplicate_key_component",
                    None if groups is None else
-                   sum(len(rows) for key, rows in groups.items() if any(missing(p) for p in key)),
+                   sum(len(rows) for key, rows in groups.items() if not usable_key(key, engine.ids(name))),
                    engine.need(name, engine.ids(name)))
 
 
@@ -845,6 +882,7 @@ def main():
         "tau.skipped.MRI_amyloid_interval_exceeds_window",
         "MRI.rejected_QC_rows", "MRI.rejected_missing_required_measurement_rows", "MRI.rejected_invalid_numeric_rows",
         "AMYQC.amyloid_scans_missing_QC_record", "AMYQC.amyloid_scans_duplicate_QC_records",
+        "AMYQC.amyloid_scans_one_pass", "AMYQC.amyloid_scans_one_fail", "AMYQC.amyloid_scans_invalid_join_key",
         "AMYQC.amyloid_scans_conflicting_QC_records", "amyloid.rejected_own_QC_rows",
         "amyloid.rejected_AMYQC_rows", "amyloid.rejected_missing_Centiloid_rows", "amyloid.rejected_invalid_Centiloid_rows",
     )
@@ -867,7 +905,7 @@ def main():
         report.add(f"X4a.{label}.sorted_RID_SHA256", None if rids is None else rid_hash(rids))
     report.add("X4a.overlap_RIDs", None if overlap is None else len(overlap))
     assertion = "BLOCKED" if blocked else "DRAFT PASS" if config["status"] == "DRAFT" else "PASS"
-    report.add("X4a.assertion", None if overlap is None else assertion)
+    report.add("X4a.assertion (by construction)", None if overlap is None else assertion)
     for name, threshold in config["tiers"]["aim1"].items():
         report.threshold("threshold.Aim1." + name, aim1, threshold, blocked)
     report.threshold("threshold.Aim2.min_confirmed_events",

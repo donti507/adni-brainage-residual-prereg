@@ -1,6 +1,6 @@
 # thresholds.yaml
 status: DRAFT            # becomes FINAL only after Theorist numbers are in
-version: 0.3
+version: 0.4
 numeric_tiers_pending_theorist: true
 source_of_truth: Residual_Brain_Age_Proposal_LaTeX.pdf
 
@@ -76,11 +76,11 @@ amyloid:
       column: SCANQLTY
       pass_value: 1
       join_keys: [RID, VISCODE2, SCANDATE]
-      missing_record: ineligible
+      missing_record: not_required
       duplicate_records: ineligible
       conflicting_records: ineligible
-      report_scan_counts: [missing_record, duplicate_records, conflicting_records]
-    require_both_qc_sources_pass: true
+      report_scan_counts: [missing_record, one_pass, one_fail, duplicate_records, conflicting_records]
+    require_both_qc_sources_pass: true  # AMYQC pass required only where a record exists
 
 tau:
   source: UCBERKELEY_TAU_6MM
