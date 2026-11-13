@@ -105,6 +105,14 @@ Codex outputs diffs only.
 - MRI QC rule chosen: A. Accept OVERALLQC "Pass" OR blank with STATUS partial (not yet
   QC'd). Exclude Fail, Partial, "Hippocampus Only". DATA-INFORMED (counts seen).
   Strict Pass-only kept as a sensitivity analysis. Limitation for the manuscript: most
+## D-010 Pre-count decisions (13 Nov 2026, before count_x1.py)
+- Cognition: UW primary, PHC sensitivity; ADNI-4 contributes via CDR-SB only.
+- Centiloid cutoff: < 20 primary (Red Team to check).
+- APOE4: out of primary model; sensitivity only.
+- Partial OVERALLQC rows: excluded; regional QC not used (brain age uses whole-brain features).
+- Unreviewed MRIs: exclude if hippocampal volume/ICV or mean temporal thickness
+  > 5 MAD from the all-MRI median; counts reported; sensitivity without the rule.
+- Dictionary sources: STATUS L77437; pT217_F -4 L78290; qc_flag -1/-2 L72109, L72786.  
   segmentations are unreviewed.
 - Sentinel bug fixed: -1/-2/-4 were wrongly treated as missing in continuous measures
   (Centiloid, tau SUVR, ADNI-Mem/EF, CDR-SB, FreeSurfer). Only pT217_F -4 is a missing code.
