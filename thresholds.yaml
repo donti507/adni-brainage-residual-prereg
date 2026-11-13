@@ -1,0 +1,121 @@
+# thresholds.yaml
+status: DRAFT            # becomes FINAL only after Theorist numbers are in
+version: 0.2
+numeric_tiers_pending_theorist: true
+source_of_truth: Residual_Brain_Age_Proposal_LaTeX.pdf
+
+units: {month_days: 365, censor_days: 1826}
+
+index:
+  anchor: tau_pet
+  rule: earliest_tau_scan_meeting_all
+  requires: [meta_temporal_suvr_non_missing, qualifying_mri, qualifying_amyloid_pet]
+  outcome_data_used: false
+
+windows_days:
+  mri_from_index: 180
+  amyloid_from_index: 180
+  mri_to_amyloid_max: 180     # proposal: MRI-PET interval <= 6 months
+  cognition_baseline: 180
+  diagnosis_baseline: 180
+  plasma_ptau217: 365
+
+selection:
+  nearest_by: absolute_days_from_index
+  consider_only: [passes_qc, non_missing_required_fields]
+  tie_break: [complete_values, earlier_record, lowest_row_id]
+  report: [tied_groups, extra_records]
+
+mri:
+  source: UCSFFSX7                 # FreeSurfer 7.x, all phases
+  required_fields: [hippocampus_left, hippocampus_right, icv, thickness_entorhinal, thickness_fusiform, thickness_inferior_temporal, thickness_middle_temporal]
+  columns: TBD_FROM_DICTIONARY
+  qc_flag: TBD_FROM_DICTIONARY
+  freesurfer_version: {report_observed: true, expected_by_phase: null}
+
+amyloid:
+  source: UCBERKELEY_AMY_6MM
+  qc_source: AMYQC
+  measure: centiloid_global
+  negative_rule: {operator: "<", cutoff: 20, status: PROVISIONAL}
+  columns: TBD_FROM_DICTIONARY
+
+tau:
+  source: UCBERKELEY_TAU_6MM
+  measure: meta_temporal_suvr
+  columns: TBD_FROM_DICTIONARY
+
+cognition:
+  primary_source: UWNPSYCHSUM        # ADNI1-3 only
+  sensitivity_source: ADSP_PHC_COGN  # covers ADNI4; status PROPOSED, user decision open
+  cdr_source: CDR
+  outcomes: [ADNI_MEM, ADNI_EF, CDR_SB]
+  baseline: nearest_visit_with_non_missing_outcome
+  followups: {after: outcome_baseline, until_days_from_index: 1826, per_outcome: true}
+  min_assessments_total: 3           # proposal: >=3 assessments = baseline + 2 follow-ups
+  min_span_days: 365
+  cohort_requires: at_least_one_outcome
+
+diagnosis:
+  source: DXSUM
+  CN: {at: diagnosis_baseline}
+  MCI: {at: diagnosis_baseline, collapse: [EMCI, LMCI]}
+  exclude: [dementia_at_baseline, no_diagnosis_in_window]
+  columns: TBD_FROM_DICTIONARY
+
+conversion:
+  role: SECONDARY                    # proposal: conversion is secondary
+  population: MCI
+  time_origin: index_date
+  event: first_post_baseline_dementia
+  confirmation: {rule: next_diagnosis_visit_only, unconfirmed_flag: true, report_both: true}
+  code_mapping: USER_CONFIRMED_A5
+
+residual_model:                      # D-001 revised to match proposal sec 5.2
+  outcome: corrected_BAG
+  terms: [amyloid_centiloid, meta_temporal_tau, age, sex, icv]   # linear only
+  robustness_only: [amyloid_x_tau_interaction, nonlinear_terms]
+  cross_fit_folds: 5
+  outcome_data_used: false
+
+comparators:                         # replaces my M1-M3; PROVISIONAL until X2
+  C1: tau_residualised_cortical_thickness   # Ossenkoppele 2020
+  C2: mtl_tau_neurodegeneration_mismatch    # Lyu 2024
+
+reserve:
+  primary: education
+  secondary: occupation_where_recorded
+  source: PTDEMOG
+
+covariates_primary: [age, sex, icv, education, amyloid, tau]
+apoe4: {source: APOERES, in_primary_model: false, status: OPEN_DECISION}
+
+multiplicity: {method: FDR_BH, across: outcomes}    # proposal says FDR, not Holm
+
+pass_rule:
+  rule: CI_excludes_null_powered_at_smallest_effect_of_interest
+  point_estimate_threshold: false    # Chat B: old rule passed only 50% at true effect
+  delta_cindex: exploratory_unless_theorist_shows_powered
+
+brain_age_training_pool:
+  model: ridge
+  population: CN_amyloid_negative
+  amyloid_within_days_of_mri: 180
+  cn_at_mri: {diagnosis_within_days: 180}
+  exclude_if_any_later_non_cn: true
+  exclude_rids: all_rids_with_index_eligible_scan
+  one_mri_per_rid: earliest_usable
+  min_n: PENDING_THEORIST
+  fallback: NONE                     # cross-fitting fallback removed; shortfall = STOP and escalate
+
+plasma_subset:
+  source: UPENN_PLASMA_FUJIREBIO_QUANTERIX
+  members_of: analysis_cohort
+  ptau217_within_days: 365
+
+tiers:
+  aim1: {confirmatory_n: PENDING_THEORIST, raised_effect_n: PENDING_THEORIST, stop_below: PENDING_THEORIST}
+  aim2: {min_confirmed_events: PENDING_THEORIST}
+  aim3_reserve: EXPLORATORY_unless_theorist_shows_powered
+
+identifiers: {participant: TBD_FROM_DICTIONARY, visit: TBD_FROM_DICTIONARY, date: TBD_FROM_DICTIONARY, phase: TBD_FROM_DICTIONARY, row_id: TBD_FROM_DICTIONARY}
