@@ -5,9 +5,7 @@
   (plasma table dated 6 Nov 2026 on the site). Files saved 13 Nov 2026, 01:50-01:58 local
   (00:50-00:58 UTC).
 - Download PRECEDED the first thresholds commit (f580e72, 01:09 UTC). Chat B to rule.
-- Attestation: [FILL IN, choose the true one:
-  "I attest that no CSV in data/raw has been opened, viewed, filtered or counted."
-  OR describe exactly what was opened and when.] MD Ali Ashraf Yad, 13 Nov 2026.
+- Attestation: I attest that no CSV in data/raw has been opened, viewed, filtered or counted. MD Ali Ashraf Yad, 13 Nov 2026. MD Ali Ashraf Yad, 13 Nov 2026.
 - The data zips were uploaded to the coordinator chat (Claude). It listed file names and
   sizes only and read no rows. The dictionary and header rows only were shared with Codex.
 - Files: UCSFFSX7, UCBERKELEY_AMY_6MM, UCBERKELEY_TAU_6MM, UPENN_PLASMA_FUJIREBIO_QUANTERIX,
