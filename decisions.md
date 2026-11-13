@@ -90,6 +90,14 @@ Codex outputs diffs only.
   dictionary entry (DATADIC L77439) does not enumerate values, and the official UCSF
   FreeSurfer Methods PDF has not been checked. qc_values.py must confirm "Pass" exists in
   UCSFFSX7; if it does not, stop and revisit before any count.
+## D-008 Deviations (for manuscript supplement)
+   - Data downloaded before first thresholds commit. Accepted by Chat B, conditional on the
+     true attestation (D-000) and disclosure in the manuscript.
+   - Engineer committed thresholds.yaml (489cb33, 410fd29) under the User's git identity.
+     Accepted by Chat B as a disclosed deviation.
+   - Repeat after the rule was set: Codex committed and pushed Round 7 (1e8692b, e7115f0,
+     thresholds v0.5) under the User's identity. Content reviewed by the coordinator.
+     Chat B to rule.  
 ## D-009 Data-informed decisions after qc_values.py (13 Nov 2026)
 - qc_values.py output seen. STOP rule in D-007 triggered: OVERALLQC blank in 11,137 rows,
   "Pass" in 674, plus an unplanned value "Hippocampus Only" (10 rows).
