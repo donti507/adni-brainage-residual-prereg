@@ -1,6 +1,6 @@
 # thresholds.yaml
 status: DRAFT            # becomes FINAL only after Theorist numbers are in
-version: 0.2
+version: 0.3
 numeric_tiers_pending_theorist: true
 source_of_truth: Residual_Brain_Age_Proposal_LaTeX.pdf
 
@@ -29,8 +29,36 @@ selection:
 mri:
   source: UCSFFSX7                 # FreeSurfer 7.x, all phases
   required_fields: [hippocampus_left, hippocampus_right, icv, thickness_entorhinal, thickness_fusiform, thickness_inferior_temporal, thickness_middle_temporal]
-  columns: TBD_FROM_DICTIONARY
-  qc_flag: TBD_FROM_DICTIONARY
+  columns:
+    hippocampus_left: ST29SV
+    hippocampus_right: ST88SV
+    icv: ST10CV
+    thickness_entorhinal:
+      left: ST24TA
+      right: ST83TA
+      require_both_non_missing: true
+      aggregation: mean
+    thickness_fusiform:
+      left: ST26TA
+      right: ST85TA
+      require_both_non_missing: true
+      aggregation: mean
+    thickness_inferior_temporal:
+      left: ST32TA
+      right: ST91TA
+      require_both_non_missing: true
+      aggregation: mean
+    thickness_middle_temporal:
+      left: ST40TA
+      right: ST99TA
+      require_both_non_missing: true
+      aggregation: mean
+    freesurfer_version: FSVER
+  qc_flag:
+    column: OVERALLQC
+    pass_token: null
+    status: PENDING_USER_SELECTION
+    before_cohort_counts: report_distinct_values_and_counts_only
   freesurfer_version: {report_observed: true, expected_by_phase: null}
 
 amyloid:
@@ -38,12 +66,30 @@ amyloid:
   qc_source: AMYQC
   measure: centiloid_global
   negative_rule: {operator: "<", cutoff: 20, status: PROVISIONAL}
-  columns: TBD_FROM_DICTIONARY
+  columns:
+    centiloid_global: CENTILOIDS
+    qc:
+      column: qc_flag
+      pass_value: 2
+    amyqc:
+      source: AMYQC
+      column: SCANQLTY
+      pass_value: 1
+      join_keys: [RID, VISCODE2, SCANDATE]
+      missing_record: ineligible
+      duplicate_records: ineligible
+      conflicting_records: ineligible
+      report_scan_counts: [missing_record, duplicate_records, conflicting_records]
+    require_both_qc_sources_pass: true
 
 tau:
   source: UCBERKELEY_TAU_6MM
   measure: meta_temporal_suvr
-  columns: TBD_FROM_DICTIONARY
+  columns:
+    meta_temporal_suvr: META_TEMPORAL_SUVR
+    qc:
+      column: qc_flag
+      pass_value: 2
 
 cognition:
   primary_source: UWNPSYCHSUM        # ADNI1-3 only
@@ -61,7 +107,12 @@ diagnosis:
   CN: {at: diagnosis_baseline}
   MCI: {at: diagnosis_baseline, collapse: [EMCI, LMCI]}
   exclude: [dementia_at_baseline, no_diagnosis_in_window]
-  columns: TBD_FROM_DICTIONARY
+  columns:
+    diagnosis: DIAGNOSIS
+    phase_for_raw_value_counts: PHASE
+    no_diagnosis_values: [10]
+    other_code_mapping_status: PENDING_USER_CONFIRMATION_A5
+    report: diagnosis_value_counts_per_phase
 
 conversion:
   role: SECONDARY                    # proposal: conversion is secondary
@@ -118,4 +169,49 @@ tiers:
   aim2: {min_confirmed_events: PENDING_THEORIST}
   aim3_reserve: EXPLORATORY_unless_theorist_shows_powered
 
-identifiers: {participant: TBD_FROM_DICTIONARY, visit: TBD_FROM_DICTIONARY, date: TBD_FROM_DICTIONARY, phase: TBD_FROM_DICTIONARY, row_id: TBD_FROM_DICTIONARY}
+identifiers:
+  participant:
+    UCSFFSX7: RID
+    UCBERKELEY_AMY_6MM: RID
+    UCBERKELEY_TAU_6MM: RID
+    UWNPSYCHSUM: RID
+    ADSP_PHC_COGN: RID
+    CDR: RID
+    DXSUM: RID
+    PTDEMOG: RID
+    AMYQC: RID
+    APOERES: RID
+    UPENN_PLASMA_FUJIREBIO_QUANTERIX: RID
+  visit:
+    UCSFFSX7: VISCODE2
+    UCBERKELEY_AMY_6MM: VISCODE2
+    UCBERKELEY_TAU_6MM: VISCODE2
+    UWNPSYCHSUM: VISCODE2
+    ADSP_PHC_COGN: VISCODE2
+    CDR: VISCODE2
+    DXSUM: VISCODE2
+    PTDEMOG: VISCODE2
+    AMYQC: VISCODE2
+    APOERES: VISCODE
+    UPENN_PLASMA_FUJIREBIO_QUANTERIX: VISCODE2
+  date:
+    UCSFFSX7: EXAMDATE
+    UCBERKELEY_AMY_6MM: SCANDATE
+    UCBERKELEY_TAU_6MM: SCANDATE
+    UWNPSYCHSUM: EXAMDATE
+    ADSP_PHC_COGN: EXAMDATE
+    CDR: VISDATE
+    DXSUM: EXAMDATE
+    PTDEMOG: VISDATE
+    AMYQC: SCANDATE
+    APOERES: APTESTDT
+    UPENN_PLASMA_FUJIREBIO_QUANTERIX: EXAMDATE
+  phase:
+    source: UCSFFSX7
+    column: PHASE
+    record: selected_mri_row
+    freesurfer_version_column: FSVER
+    derive_pet_phase: false
+  row_id:
+    source: original_csv_row_position
+    order: ascending
